@@ -2,10 +2,26 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 
 from cleaner import clean_extracted_text
+
+_LOGGER = logging.getLogger(__name__)
+
+
+def _ensure_extractor_audit_handler() -> None:
+    if _LOGGER.handlers:
+        return
+    _LOGGER.setLevel(logging.INFO)
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+    _LOGGER.addHandler(handler)
+    _LOGGER.propagate = False
+
+
+_ensure_extractor_audit_handler()
 
 
 _CONSONANT_RUN_RE = re.compile(r"(?i)[bcdfghjklmnñpqrstvwxyz]{5,}")
@@ -67,8 +83,12 @@ def _extract_pdf(path: Path) -> str:
         for idx, page in enumerate(pdf.pages, start=1):
             try:
                 texto_pagina = page.extract_text() or ""
-                print(f"[EXTRACTOR] Página {idx}: {len(texto_pagina)} chars extraídos")
-                print(f"[EXTRACTOR] Primeros 200 chars: {repr(texto_pagina[:200])}")
+                _LOGGER.info(
+                    "Página %s: %s chars extraídos; primeros 200: %s",
+                    idx,
+                    len(texto_pagina),
+                    repr(texto_pagina[:200]),
+                )
                 filtered_lines = [
                     ln for ln in texto_pagina.split("\n") if not _is_mirrored_text(ln)
                 ]
@@ -76,8 +96,10 @@ def _extract_pdf(path: Path) -> str:
                 if text:
                     parts.append(f"[PAGINA {idx}]\n{text}")
                 else:
+                    _LOGGER.warning("Página %s: texto ilegible tras extracción/limpieza", idx)
                     parts.append(f"[PAGINA {idx}]\n[TEXTO_ILEGIBLE]")
             except Exception:
+                _LOGGER.warning("Página %s: error en extracción, marcando ilegible", idx)
                 parts.append(f"[PAGINA {idx}]\n[TEXTO_ILEGIBLE]")
     return "\n\n".join(parts).strip()
 
@@ -202,8 +224,12 @@ def _extract_pptx(path: Path) -> str:
         try:
             slide_raw_text = _pptx_slide_to_text(slide)
             if slide_raw_text:
-                print(f"[EXTRACTOR] Slide {idx}: {len(slide_raw_text)} chars extraídos")
-                print(f"[EXTRACTOR] Primeros 200 chars: {repr(slide_raw_text[:200])}")
+                _LOGGER.info(
+                    "Slide %s: %s chars extraídos; primeros 200: %s",
+                    idx,
+                    len(slide_raw_text),
+                    repr(slide_raw_text[:200]),
+                )
                 filtered_lines = [
                     ln for ln in slide_raw_text.split("\n") if not _is_mirrored_text(ln)
                 ]
@@ -211,10 +237,13 @@ def _extract_pptx(path: Path) -> str:
                 if slide_text:
                     parts.append(f"[SLIDE {idx}]\n{slide_text}")
                 else:
+                    _LOGGER.warning("Slide %s: texto ilegible tras extracción/limpieza", idx)
                     parts.append(f"[SLIDE {idx}]\n[TEXTO_ILEGIBLE]")
             else:
+                _LOGGER.warning("Slide %s: sin texto extraíble", idx)
                 parts.append(f"[SLIDE {idx}]\n[TEXTO_ILEGIBLE]")
         except Exception:
+            _LOGGER.warning("Slide %s: error en extracción, marcando ilegible", idx)
             parts.append(f"[SLIDE {idx}]\n[TEXTO_ILEGIBLE]")
     return "\n\n".join(parts).strip()
 

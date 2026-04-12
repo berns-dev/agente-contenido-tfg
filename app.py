@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tempfile
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import streamlit as st
@@ -11,6 +12,7 @@ import streamlit as st
 from assembler import assemble_markdown, assemble_multiple, unified_download_filename
 from chunker import split_into_chunks
 from classifier import classify_and_format
+from config import MAX_WORKERS
 from extractor import extract_text
 from validator import validate_items
 
@@ -68,8 +70,26 @@ def main() -> None:
                         status.write("Chunks…")
                         chunks = split_into_chunks(text)
 
-                        status.write("Clasificación…")
-                        items = [classify_and_format(chunk) for chunk in chunks]
+                        n_chunks = len(chunks)
+                        if n_chunks == 0:
+                            items = []
+                        else:
+                            status.write(f"Clasificación… (0/{n_chunks})")
+                            ordered: list = [None] * n_chunks
+                            done = 0
+                            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+                                future_to_i = {
+                                    pool.submit(classify_and_format, chunk): i
+                                    for i, chunk in enumerate(chunks)
+                                }
+                                for fut in as_completed(future_to_i):
+                                    i = future_to_i[fut]
+                                    ordered[i] = fut.result()
+                                    done += 1
+                                    status.write(
+                                        f"Clasificación… ({done}/{n_chunks})"
+                                    )
+                            items = ordered
 
                         status.write("Ensamblado…")
                         output_md = assemble_markdown(

@@ -11,6 +11,7 @@ from config import (
     ANTHROPIC_API_KEY,
     ANTHROPIC_URL,
     ANTHROPIC_VERSION,
+    MIN_CHARS_FOR_SMART,
     MODEL_FAST,
     MODEL_SMART,
     REQUEST_TIMEOUT_SECONDS,
@@ -136,6 +137,8 @@ def _parse_delimited_response(raw: str) -> dict:
 def select_model(chunk_text: str) -> str:
     """Selecciona modelo segun densidad matematica del chunk."""
     if not chunk_text:
+        return MODEL_FAST
+    if len(chunk_text) < MIN_CHARS_FOR_SMART:
         return MODEL_FAST
     symbol_density = sum(1 for c in chunk_text if c in MATH_SYMBOLS) / len(chunk_text)
     has_equation_patterns = any(p in chunk_text for p in ["d/dt", "d²", "∫", "Σ", "="])
