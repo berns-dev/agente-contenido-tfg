@@ -34,6 +34,13 @@ def main() -> None:
     files: list = list(uploaded_files) if uploaded_files else []
     current_files_hash = tuple(sorted(f.name for f in files))
 
+    if files and any(Path(f.name).suffix.lower() == ".pdf" for f in files):
+        st.warning(
+            "Si este archivo es una presentación exportada desde PowerPoint, los "
+            "resultados serán limitados. Para mejor fidelidad, sube el archivo "
+            ".pptx original."
+        )
+
     for f in files:
         st.caption(f"{f.name}")
 

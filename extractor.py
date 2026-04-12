@@ -82,6 +82,117 @@ def _extract_pdf(path: Path) -> str:
     return "\n\n".join(parts).strip()
 
 
+def _escape_markdown_table_cell(text: str) -> str:
+    """
+    Escapa contenido de celda para tablas Markdown con pipes.
+    Sin esto, un '|' literal en la celda rompe la tabla y confunde al pipeline.
+    """
+    return text.replace("\\", "\\\\").replace("|", "\\|")
+
+
+def _pptx_table_to_markdown(table: object) -> str:
+    """
+    Convierte una tabla de python-pptx a Markdown tipo GitHub (pipes).
+    La primera fila se trata como cabecera: es la convención más habitual en PPTX
+    y coincide con el enfoque de MarkItDown (primera fila = th).
+    """
+    rows = list(getattr(table, "rows", []) or [])
+    if not rows:
+        return ""
+    lines: list[str] = []
+    for row_idx, row in enumerate(rows):
+        cells = [
+            _escape_markdown_table_cell(
+                str(getattr(cell, "text", "") or "").strip().replace("\n", " ")
+            )
+            for cell in row.cells
+        ]
+        lines.append("| " + " | ".join(cells) + " |")
+        if row_idx == 0:
+            lines.append("| " + " | ".join(["---"] * len(cells)) + " |")
+    return "\n".join(lines)
+
+
+def _pptx_collect_shape_blocks(shape: object, title_shape: object | None) -> list[str]:
+    """
+    Recorre shapes en el orden que expone python-pptx (orden Z de la diapositiva).
+    Los grupos se expanden: el texto en grupos anidados no aparece en el iterador
+    plano de slide.shapes y se perdería sin recursión.
+    """
+    from pptx.enum.shapes import MSO_SHAPE_TYPE, PP_PLACEHOLDER
+
+    blocks: list[str] = []
+
+    if getattr(shape, "shape_type", None) == MSO_SHAPE_TYPE.GROUP:
+        for child in getattr(shape, "shapes", []):
+            blocks.extend(_pptx_collect_shape_blocks(child, title_shape))
+        return blocks
+
+    # El título de slide ya va en un bloque `#` aparte: no duplicar el mismo shape.
+    if title_shape is not None and shape is title_shape:
+        return blocks
+
+    if getattr(shape, "shape_type", None) == MSO_SHAPE_TYPE.TABLE and getattr(
+        shape, "table", None
+    ):
+        md_table = _pptx_table_to_markdown(shape.table)
+        if md_table.strip():
+            blocks.append(md_table.strip())
+        return blocks
+
+    if getattr(shape, "has_text_frame", False):
+        raw = str(getattr(shape, "text", "") or "").strip()
+        if not raw:
+            return blocks
+        # Subtítulo de layout típico: segunda jerarquía sin inferir roles complejos
+        # (solo placeholders explícitos de PPTX, evitamos heurísticas frágiles).
+        prefix = ""
+        try:
+            if getattr(shape, "is_placeholder", False):
+                ph_type = shape.placeholder_format.type
+                subtitle_types = {PP_PLACEHOLDER.SUBTITLE}
+                if hasattr(PP_PLACEHOLDER, "VERTICAL_SUBTITLE"):
+                    subtitle_types.add(PP_PLACEHOLDER.VERTICAL_SUBTITLE)
+                if ph_type in subtitle_types:
+                    prefix = "## "
+        except (ValueError, AttributeError):
+            pass
+        blocks.append(prefix + raw)
+        return blocks
+
+    return blocks
+
+
+def _pptx_slide_to_text(slide: object) -> str:
+    """
+    Ensambla el contenido de una diapositiva: título como H1, cuerpo/tablas en orden,
+    notas al final en un bloque propio (trazabilidad docente / guion del profesor).
+    """
+    blocks: list[str] = []
+
+    title_shape = getattr(slide.shapes, "title", None)
+    if title_shape is not None and getattr(title_shape, "text", None):
+        title_text = str(title_shape.text).strip()
+        if title_text:
+            # Un solo H1 por slide: refleja el modelo mental de "título de diapositiva"
+            # y alinea el Markdown con la jerarquía visual habitual.
+            blocks.append(f"# {title_text}")
+
+    for shape in slide.shapes:
+        blocks.extend(_pptx_collect_shape_blocks(shape, title_shape))
+
+    if getattr(slide, "has_notes_slide", False):
+        notes_tf = slide.notes_slide.notes_text_frame
+        if notes_tf is not None:
+            notes_text = str(notes_tf.text or "").strip()
+            if notes_text:
+                # Bloque separado y estable para chunking/LLM sin mezclarlo con el bullet principal.
+                blocks.append("### Notas del presentador\n\n" + notes_text)
+
+    # Doble salto entre bloques: separa tablas Markdown del texto plano sin fusionar filas.
+    return "\n\n".join(b for b in blocks if b).strip()
+
+
 def _extract_pptx(path: Path) -> str:
     from pptx import Presentation
 
@@ -89,15 +200,9 @@ def _extract_pptx(path: Path) -> str:
     parts: list[str] = []
     for idx, slide in enumerate(prs.slides, start=1):
         try:
-            slide_lines: list[str] = []
-            for shape in slide.shapes:
-                if hasattr(shape, "text") and shape.text:
-                    content = str(shape.text).strip()
-                    if content:
-                        slide_lines.append(content)
-            if slide_lines:
-                slide_raw_text = "\n".join(slide_lines)
-                print(f"[EXTRACTOR] Página {idx}: {len(slide_raw_text)} chars extraídos")
+            slide_raw_text = _pptx_slide_to_text(slide)
+            if slide_raw_text:
+                print(f"[EXTRACTOR] Slide {idx}: {len(slide_raw_text)} chars extraídos")
                 print(f"[EXTRACTOR] Primeros 200 chars: {repr(slide_raw_text[:200])}")
                 filtered_lines = [
                     ln for ln in slide_raw_text.split("\n") if not _is_mirrored_text(ln)

@@ -3,3 +3,8 @@ __pycache__/
 *.pyc
 *.pyo
 .DS_Store
+
+validate_pdf.py
+/validate_*.txt
+/salida_*.txt
+/*.pdf

@@ -2,8 +2,32 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
+from typing import Any
+
+# Logger de módulo: permite activar nivel INFO en despliegue sin prints acoplados a Streamlit,
+# y auditar líneas borradas por frecuencia sin cambiar la lógica de limpieza.
+_LOGGER = logging.getLogger(__name__)
+
+
+def _ensure_cleaner_audit_handler() -> None:
+    """
+    Un handler explícito a stderr: en Streamlit el root logger suele quedar en WARNING
+    y los mensajes INFO no serían visibles para auditar el cleaner sin tocar config global.
+    Idempotente para no duplicar handlers en recargas del mismo proceso.
+    """
+    if _LOGGER.handlers:
+        return
+    _LOGGER.setLevel(logging.INFO)
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+    _LOGGER.addHandler(handler)
+    _LOGGER.propagate = False
+
+
+_ensure_cleaner_audit_handler()
 
 _BOUNDARY_RE = re.compile(r"(?=^\[(?:PAGINA|SLIDE)\s+\d+\])", re.MULTILINE)
 _PAGE_NUMBER_RE = re.compile(r"^\s*\d+\s*$")
@@ -51,11 +75,20 @@ def _should_preserve_from_frequency(line: str) -> bool:
     return False
 
 
-def _compute_structural_noise_lines(sections: list[str], filename: str = "") -> set[str]:
+def _compute_structural_noise(
+    sections: list[str], filename: str = ""
+) -> tuple[set[str], dict[str, dict[str, Any]], str]:
+    """
+    Calcula líneas candidatas a ruido estructural (repetidas en la mayoría de secciones).
+
+    Devuelve también `frequency_detail` indexado por línea en minúsculas: al borrar,
+    registramos ratio = apariciones_en_secciones_distintas / total_secciones sin tocar
+    el umbral (sigue siendo count > total * 0.60), solo hacemos visible el criterio.
+    """
     total = len(sections)
     if total == 0:
-        return set()
-    stem = Path(filename).stem.strip().lower() if filename else ""
+        return set(), {}, ""
+    stem_lower = Path(filename).stem.strip().lower() if filename else ""
     counts: dict[str, int] = {}
     for section in sections:
         seen_in_section: set[str] = set()
@@ -74,14 +107,27 @@ def _compute_structural_noise_lines(sections: list[str], filename: str = "") -> 
             counts[line] = counts.get(line, 0) + 1
 
     threshold = total * 0.60
-    noise_lines = {line.lower() for line, count in counts.items() if count > threshold}
-    if stem:
-        noise_lines.add(stem)
-    return noise_lines
+    noise_lines: set[str] = set()
+    frequency_detail: dict[str, dict[str, Any]] = {}
+    for line, count in counts.items():
+        if count > threshold:
+            key = line.lower()
+            noise_lines.add(key)
+            frequency_detail[key] = {
+                "count": count,
+                "ratio": count / total,
+                "sections_total": total,
+                "threshold_exclusive": threshold,
+                "example": line,
+            }
+    if stem_lower:
+        noise_lines.add(stem_lower)
+    return noise_lines, frequency_detail, stem_lower
 
 
 def clean_extracted_text(text: str, filename: str = "") -> str:
     """Elimina ruido tipico de OCR/extraccion manteniendo contenido tecnico."""
+    _ensure_cleaner_audit_handler()
     chars_entrada = len(text or "")
     clean = (text or "").replace("\r\n", "\n").replace("\r", "\n")
     if not clean.strip():
@@ -91,7 +137,9 @@ def clean_extracted_text(text: str, filename: str = "") -> str:
         return ""
 
     sections = _split_sections(clean)
-    structural_noise_lines = _compute_structural_noise_lines(sections, filename=filename)
+    structural_noise_lines, frequency_detail, stem_lower = _compute_structural_noise(
+        sections, filename=filename
+    )
     cleaned_lines: list[str] = []
     n_eliminadas_frecuencia = 0
     n_eliminadas_regex = 0
@@ -125,6 +173,33 @@ def clean_extracted_text(text: str, filename: str = "") -> str:
             elif len(line) <= 60 and line.lower() in structural_noise_lines:
                 should_drop = True
                 n_eliminadas_frecuencia += 1
+                lk = line.lower()
+                meta = frequency_detail.get(lk)
+                if meta is not None:
+                    # ratio = veces que la línea aparece en secciones distintas / total de secciones
+                    _LOGGER.info(
+                        "Eliminada por frecuencia estructural: ratio=%.4f (%d/%d secciones); "
+                        "umbral estricto count > %.3f (total*0.60). repr línea actual=%r ejemplo_canónico=%r",
+                        float(meta["ratio"]),
+                        int(meta["count"]),
+                        int(meta["sections_total"]),
+                        float(meta["threshold_exclusive"]),
+                        line,
+                        meta["example"],
+                    )
+                elif stem_lower and lk == stem_lower:
+                    _LOGGER.info(
+                        "Eliminada por coincidencia con stem del nombre de archivo (regla "
+                        "adicional al conteo por sección): repr=%r stem=%r",
+                        line,
+                        stem_lower,
+                    )
+                else:
+                    _LOGGER.info(
+                        "Eliminada por conjunto de ruido estructural sin metadatos de "
+                        "frecuencia (caso residual): repr=%r",
+                        line,
+                    )
 
         if should_drop:
             continue
