@@ -131,9 +131,9 @@ def clean_extracted_text(text: str, filename: str = "") -> str:
     chars_entrada = len(text or "")
     clean = (text or "").replace("\r\n", "\n").replace("\r", "\n")
     if not clean.strip():
-        print(f"[CLEANER] Entrada: {chars_entrada} chars → Salida: 0 chars")
-        print("[CLEANER] Líneas eliminadas por frecuencia: 0")
-        print("[CLEANER] Líneas eliminadas por regex: 0")
+        _LOGGER.info("[CLEANER] Entrada: %s chars → Salida: 0 chars", chars_entrada)
+        _LOGGER.info("[CLEANER] Líneas eliminadas por frecuencia: 0")
+        _LOGGER.info("[CLEANER] Líneas eliminadas por regex: 0")
         return ""
 
     sections = _split_sections(clean)
@@ -210,7 +210,9 @@ def clean_extracted_text(text: str, filename: str = "") -> str:
     cleaned_text = "\n".join(cleaned_lines)
     cleaned_text = _MULTINEWLINES_RE.sub("\n\n", cleaned_text)
     resultado = cleaned_text.strip()
-    print(f"[CLEANER] Entrada: {chars_entrada} chars → Salida: {len(resultado)} chars")
-    print(f"[CLEANER] Líneas eliminadas por frecuencia: {n_eliminadas_frecuencia}")
-    print(f"[CLEANER] Líneas eliminadas por regex: {n_eliminadas_regex}")
+    _LOGGER.info(
+        "[CLEANER] Entrada: %s chars → Salida: %s chars", chars_entrada, len(resultado)
+    )
+    _LOGGER.info("[CLEANER] Líneas eliminadas por frecuencia: %s", n_eliminadas_frecuencia)
+    _LOGGER.info("[CLEANER] Líneas eliminadas por regex: %s", n_eliminadas_regex)
     return resultado

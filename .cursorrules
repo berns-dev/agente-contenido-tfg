@@ -8,7 +8,7 @@ NO genera contenido nuevo. Solo transforma la representación del contenido exis
 ## Reglas de desarrollo
 - La API usada es Anthropic directa (no OpenRouter). Nunca uses openrouter en este proyecto.
 - Los modelos válidos son: claude-haiku-4-5-20251001 (fast) y claude-sonnet-4-5 (smart).
-- Toda llamada a la API debe incluir reintentos (máximo 2) ante errores de parseo JSON.
+- Toda llamada a la API debe incluir reintentos (máximo 2) ante respuesta con `<MARKDOWN>` vacío o tag `<TIPO>` ausente. Protocolo de salida: tags XML delimitados (<TIPO>, <TITULO>, <IDIOMA>, <MARKDOWN>).
 - El output SIEMPRE es un único archivo .md con frontmatter YAML al inicio.
 - NUNCA inventes contenido: el markdown de salida debe ser fiel al texto extraído del documento.
 - Las imágenes y figuras se marcan como [FIGURA: descripción] — no se extraen ni se embeben.
@@ -17,6 +17,7 @@ NO genera contenido nuevo. Solo transforma la representación del contenido exis
 
 ## Estructura de módulos
 - extractor.py: extracción de texto de PDF y PPTX
+- cleaner.py: limpieza determinista post-extracción (normalización, ruido estructural, logging)
 - chunker.py: división en chunks respetando límites de página/slide
 - classifier.py: clasificación y formateo via LLM (haiku por defecto, sonnet para contenido matemático)
 - assembler.py: ensamblado del .md final con frontmatter

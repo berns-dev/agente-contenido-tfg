@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from config import FIDELITY_THRESHOLD
+
 _STOPWORDS = {
     "para",
     "entre",
@@ -63,7 +65,7 @@ def validate_fidelity(original_chunk: str, markdown_output: str) -> dict[str, An
     return {
         "coverage_score": round(coverage, 3),
         "missing_terms": missing[:10],
-        "passed": coverage >= 0.85,
+        "passed": coverage >= FIDELITY_THRESHOLD,
     }
 
 

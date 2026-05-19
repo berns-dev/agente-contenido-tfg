@@ -255,7 +255,7 @@ def assemble_multiple(resultados: list[dict[str, Any]]) -> str:
     partes: list[str] = [f"{h1}{bodies[0].strip()}".strip()]
     for i in range(1, len(resultados)):
         nom = resultados[i]["nombre"]
-        partes.append(f"---\n\n## {nom}\n\n{bodies[i].strip()}")
+        partes.append(f"---\n\n## {Path(nom).stem}\n\n{bodies[i].strip()}")
 
     cuerpo = _remove_empty_sections("\n\n".join(partes).strip())
     return f"{unified_fm}\n\n{cuerpo}"

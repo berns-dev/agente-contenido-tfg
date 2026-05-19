@@ -184,7 +184,7 @@ def _is_section_header(line: str) -> bool:
     lowered = stripped.lower()
     if any(lowered.startswith(keyword.lower()) for keyword in _SECTION_KEYWORDS):
         return True
-    if 4 < len(stripped) < 80 and stripped == stripped.upper():
+    if 4 < len(stripped) < 80 and stripped == stripped.upper() and "=" not in stripped:
         return True
     return False
 

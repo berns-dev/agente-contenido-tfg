@@ -40,7 +40,7 @@ NUNCA crees una seccion si no hay contenido de ese tipo en el fragmento.
 Tipo        | Seccion ES                  | Seccion EN
 ------------|-----------------------------|-----------------------
 teoria      | ## Contenido teorico        | ## Theory
-ejemplo_res | ## Ejemplos resueltos       | ## Solved examples
+ejemplo_resuelto | ## Ejemplos resueltos       | ## Solved examples
 ejercicio   | ## Ejercicios propuestos    | ## Practice problems
 tabla       | ## Tablas de referencia     | ## Reference tables
 procedimien | ## Procedimientos           | ## Procedures
@@ -141,7 +141,7 @@ def select_model(chunk_text: str) -> str:
     if len(chunk_text) < MIN_CHARS_FOR_SMART:
         return MODEL_FAST
     symbol_density = sum(1 for c in chunk_text if c in MATH_SYMBOLS) / len(chunk_text)
-    has_equation_patterns = any(p in chunk_text for p in ["d/dt", "d²", "∫", "Σ", "="])
+    has_equation_patterns = any(p in chunk_text for p in ["d/dt", "d²", "∫", "Σ"])
     if symbol_density > 0.02 or has_equation_patterns:
         return MODEL_SMART
     return MODEL_FAST
