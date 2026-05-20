@@ -11,8 +11,6 @@ ENV_PATH = Path(__file__).resolve().parent / ".env"
 load_dotenv(dotenv_path=ENV_PATH)
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
-ANTHROPIC_VERSION = "2023-06-01"
 MODEL_FAST = os.getenv("MODEL_FAST", "claude-haiku-4-5-20251001")
 MODEL_SMART = os.getenv("MODEL_SMART", "claude-sonnet-4-5")
 

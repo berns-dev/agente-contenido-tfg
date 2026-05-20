@@ -5,12 +5,10 @@ from __future__ import annotations
 import re
 from typing import Any
 
-import requests
+import anthropic
 
 from config import (
     ANTHROPIC_API_KEY,
-    ANTHROPIC_URL,
-    ANTHROPIC_VERSION,
     MIN_CHARS_FOR_SMART,
     MODEL_FAST,
     MODEL_SMART,
@@ -147,34 +145,34 @@ def select_model(chunk_text: str) -> str:
     return MODEL_FAST
 
 
-def _call_anthropic(chunk_text: str) -> dict[str, Any]:
-    if not ANTHROPIC_API_KEY:
-        raise RuntimeError("Falta ANTHROPIC_API_KEY en .env")
+_anthropic_client: anthropic.Anthropic | None = None
 
+
+def _get_client() -> anthropic.Anthropic:
+    global _anthropic_client
+    if _anthropic_client is None:
+        if not ANTHROPIC_API_KEY:
+            raise RuntimeError("Falta ANTHROPIC_API_KEY en .env")
+        _anthropic_client = anthropic.Anthropic(
+            api_key=ANTHROPIC_API_KEY,
+            timeout=float(REQUEST_TIMEOUT_SECONDS),
+        )
+    return _anthropic_client
+
+
+def _call_anthropic(chunk_text: str) -> dict[str, Any]:
+    client = _get_client()
     model = select_model(chunk_text)
-    headers = {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": ANTHROPIC_VERSION,
-        "content-type": "application/json",
-    }
-    payload: dict[str, Any] = {
-        "model": model,
-        "max_tokens": 2048,
-        "system": SYSTEM_PROMPT,
-        "messages": [{"role": "user", "content": chunk_text}],
-    }
 
     last_raw = ""
     for attempt in range(3):
-        response = requests.post(
-            ANTHROPIC_URL,
-            headers=headers,
-            json=payload,
-            timeout=REQUEST_TIMEOUT_SECONDS,
+        message = client.messages.create(
+            model=model,
+            max_tokens=2048,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": chunk_text}],
         )
-        if response.status_code >= 400:
-            raise RuntimeError(f"Anthropic error {response.status_code}: {response.text}")
-        raw = str(response.json()["content"][0]["text"])
+        raw = message.content[0].text
         last_raw = raw
         parsed = _parse_delimited_response(raw)
         contenido = str(parsed.get("contenido_markdown", "")).strip()
