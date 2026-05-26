@@ -25,6 +25,7 @@ _ensure_chunker_audit_handler()
 
 _NUMBERED_HEADER_RE = re.compile(r"^\d+(?:\.\d+)*\.\s+\S")
 _PAGE_SLIDE_HEADER_RE = re.compile(r"^\[(?:PAGINA|SLIDE)\s+\d+\]")
+_SENTENCE_END_RE = re.compile(r'[.!?]["\'\)]*(?:\s|$)')
 _SECTION_KEYWORDS = (
     "Chapter",
     "Section",
@@ -110,6 +111,35 @@ def _extend_cut_past_markdown_table(
     return cut_exclusive
 
 
+def _extend_cut_to_sentence_end(
+    para: str, start: int, proposed: int, hard_max_len: int, lookahead: int = 300
+) -> int:
+    """Extend proposed forward to end of current sentence if the cut falls mid-sentence.
+
+    Does not move the cut if it already lands at a sentence boundary (., !, ?)
+    or at a newline. Never extends past hard_max_len chars from start.
+    """
+    if proposed >= len(para):
+        return proposed
+
+    # Already at a sentence boundary: look at the non-whitespace chars just before the cut.
+    tail = para[max(start, proposed - 10):proposed].rstrip()
+    if tail and tail[-1] in ".!?":
+        return proposed
+
+    # A newline is an acceptable paragraph boundary — don't extend.
+    if proposed > start and para[proposed - 1] == "\n":
+        return proposed
+
+    # Search forward for the next sentence end within lookahead chars.
+    search_end = min(len(para), proposed + lookahead, start + hard_max_len)
+    m = _SENTENCE_END_RE.search(para, proposed, search_end)
+    if m:
+        return m.end()
+
+    return proposed
+
+
 def _split_oversized_paragraph(para: str, max_chars: int) -> list[str]:
     """Parte un párrafo largo respetando tablas Markdown y límites duros."""
     hard = 2 * CHUNK_TARGET_TOKENS * CHUNK_CHAR_RATIO
@@ -122,6 +152,9 @@ def _split_oversized_paragraph(para: str, max_chars: int) -> list[str]:
             if last_nl != -1 and last_nl >= start:
                 proposed = last_nl + 1
         proposed = _extend_cut_past_markdown_table(
+            para, start, proposed, hard_max_len=hard
+        )
+        proposed = _extend_cut_to_sentence_end(
             para, start, proposed, hard_max_len=hard
         )
         if proposed <= start:
