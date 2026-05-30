@@ -41,7 +41,7 @@ teoria      | ## Contenido teorico        | ## Theory
 ejemplo_resuelto | ## Ejemplos resueltos       | ## Solved examples
 ejercicio   | ## Ejercicios propuestos    | ## Practice problems
 tabla       | ## Tablas de referencia     | ## Reference tables
-procedimien | ## Procedimientos           | ## Procedures
+procedimiento | ## Procedimientos           | ## Procedures
 resumen     | ## Resumen                  | ## Summary
 mixto       | ## Contenido                | ## Content
 

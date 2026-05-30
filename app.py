@@ -367,7 +367,22 @@ section[data-testid="stMain"] > div {
                                 }
                                 for fut in as_completed(future_to_i):
                                     i = future_to_i[fut]
-                                    ordered[i] = fut.result()
+                                    try:
+                                        ordered[i] = fut.result()
+                                    except Exception as chunk_exc:
+                                        error_msg = str(chunk_exc)
+                                        st.warning(
+                                            f"⚠️ Error en chunk {i + 1}/{n_chunks}: "
+                                            f"{error_msg}"
+                                        )
+                                        ordered[i] = {
+                                            "tipo": "mixto",
+                                            "titulo_detectado": None,
+                                            "idioma": "es",
+                                            "contenido_markdown": (
+                                                f"[ERROR EN CHUNK {i + 1}: {error_msg}]"
+                                            ),
+                                        }
                                     done += 1
                                     status.write(
                                         f"Clasificación… ({done}/{n_chunks})"
