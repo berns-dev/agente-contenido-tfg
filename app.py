@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import re
 import tempfile
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from assembler import assemble_markdown, assemble_multiple, unified_download_filename
 from chunker import split_into_chunks
@@ -17,80 +19,302 @@ from extractor import extract_text
 from validator import validate_items
 
 
+def parse_organization_md(content: str) -> list[dict]:
+    """Extrae bloques y horas de un .md generado por el Agente Organizador.
+
+    Detecta líneas con el patrón:  ## Nombre del bloque · Xh
+    Devuelve lista de dicts con 'nombre' y 'horas'.
+    """
+    pattern = re.compile(r"^#{1,3}\s+(.+?)\s*·\s*([\d,.]+)h", re.MULTILINE)
+    bloques = []
+    for m in pattern.finditer(content):
+        nombre = m.group(1).strip()
+        horas_str = m.group(2).replace(",", ".")
+        try:
+            horas = float(horas_str)
+        except ValueError:
+            continue
+        bloques.append({"nombre": nombre, "horas": horas})
+    return bloques
+
+
+_HERO_CONT_HTML = """<!DOCTYPE html><html><head>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --text1:#2C2C2A;--text2:#5F5E5A;--text3:#888780;
+  --card:rgba(0,0,0,0.03);--border:rgba(0,0,0,0.1);--arrow:rgba(0,0,0,0.2);
+}
+:root.dark{
+  --text1:#FAFAFA;--text2:rgba(255,255,255,0.65);--text3:rgba(255,255,255,0.4);
+  --card:rgba(255,255,255,0.06);--border:rgba(255,255,255,0.1);--arrow:rgba(255,255,255,0.22);
+}
+@media(prefers-color-scheme:dark){:root:not(.light){
+  --text1:#FAFAFA;--text2:rgba(255,255,255,0.65);--text3:rgba(255,255,255,0.4);
+  --card:rgba(255,255,255,0.06);--border:rgba(255,255,255,0.1);--arrow:rgba(255,255,255,0.22);
+}}
+body{background:transparent;font-family:'DM Sans',sans-serif;overflow:hidden;padding:0 2px;}
+.hero{padding:32px 0 16px 0;}
+.eyebrow{font-size:11px;font-weight:500;color:#185FA5;letter-spacing:.14em;
+  text-transform:uppercase;margin-bottom:12px;}
+.title{font-family:'Playfair Display',serif;font-size:38px;font-weight:500;
+  color:var(--text1);line-height:1.15;margin-bottom:14px;}
+.title .accent{color:#185FA5;}
+.desc{font-size:15px;font-weight:400;color:var(--text2);line-height:1.6;max-width:560px;}
+.workflow{display:flex;align-items:center;margin-top:28px;padding:18px 24px;
+  background:var(--card);border:.5px solid var(--border);border-radius:10px;}
+.step{display:flex;align-items:center;gap:12px;flex:1;}
+.num{width:30px;height:30px;border-radius:50%;background:#185FA5;color:#FFF;
+  font-size:13px;font-weight:500;display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;box-shadow:0 2px 8px rgba(24,95,165,.25);}
+.lbl{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;
+  letter-spacing:.08em;margin-bottom:3px;}
+.sdesc{font-size:13px;font-weight:500;color:var(--text1);}
+.arrow{flex-shrink:0;margin:0 8px;color:var(--arrow);}
+</style>
+<script>
+(function(){
+  function sync(){
+    try{
+      var p=window.parent,doc=p.document;
+      var els=[doc.body,doc.documentElement];
+      for(var i=0;i<els.length;i++){
+        var cs=p.getComputedStyle(els[i]);
+        var bg=cs.backgroundColor;
+        var m=bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+        if(!m) continue;
+        var alpha=m[4]===undefined?1:parseFloat(m[4]);
+        if(alpha<0.1) continue;
+        var lum=(0.299*+m[1]+0.587*+m[2]+0.114*+m[3])/255;
+        document.documentElement.classList.toggle('dark',lum<0.5);
+        document.documentElement.classList.toggle('light',lum>=0.5);
+        document.body.style.backgroundColor=bg;
+        return;
+      }
+    }catch(e){}
+  }
+  sync();setInterval(sync,800);
+})();
+</script>
+</head><body>
+<div class="hero">
+  <div class="eyebrow">Agente 02</div>
+  <div class="title">Generaci&#243;n de <span class="accent">contenido</span></div>
+  <div class="desc">Convierte tus PDFs y PPTXs en Markdown estructurado, fiel al original y listo para reutilizar.</div>
+  <div class="workflow">
+    <div class="step">
+      <div class="num">1</div>
+      <div><div class="lbl">Paso 1</div><div class="sdesc">Organizaci&#243;n</div></div>
+    </div>
+    <svg class="arrow" width="20" height="12" viewBox="0 0 20 12" fill="none">
+      <path d="M0 6h16M12 2l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div class="step">
+      <div class="num">2</div>
+      <div><div class="lbl">Paso 2</div><div class="sdesc">Material</div></div>
+    </div>
+    <svg class="arrow" width="20" height="12" viewBox="0 0 20 12" fill="none">
+      <path d="M0 6h16M12 2l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div class="step">
+      <div class="num">3</div>
+      <div><div class="lbl">Paso 3</div><div class="sdesc">Procesar</div></div>
+    </div>
+  </div>
+</div>
+</body></html>"""
+
+
 def main() -> None:
     if "resultados" not in st.session_state:
         st.session_state["resultados"] = []
     if "archivos_hash" not in st.session_state:
         st.session_state["archivos_hash"] = tuple()
+    if "org_bloques" not in st.session_state:
+        st.session_state["org_bloques"] = []
 
     st.set_page_config(page_title="Agente contenido", layout="wide")
 
     st.markdown(
         """
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500&family=DM+Sans:wght@400;500&display=swap');
+
+[data-testid="stAppViewContainer"] > .main,
+[data-testid="stMain"] {
+    background-color: var(--background-color) !important;
+}
+section[data-testid="stMain"] > div {
+    background-color: var(--background-color) !important;
+}
+[data-testid="stSidebar"] {
+    background-color: var(--secondary-background-color) !important;
+    border-right: 1px solid rgba(128,128,128,0.2) !important;
+}
+[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
+    background-color: var(--secondary-background-color) !important;
+    border-radius: 10px !important;
+    border: 1px solid rgba(128,128,128,0.2) !important;
+}
 [data-testid="stFileUploaderDropzone"] {
-    background-color: var(--background-color);
-    border-radius: 8px;
+    border-radius: 10px !important;
+    border: 1px solid rgba(128,128,128,0.2) !important;
+    background-color: var(--secondary-background-color) !important;
 }
 .stButton > button {
     background-color: #185FA5 !important;
     color: white !important;
     border: none !important;
-    border-radius: 7px !important;
+    border-radius: 12px !important;
+    font-family: 'DM Sans', sans-serif !important;
     font-weight: 500 !important;
+    letter-spacing: 0.01em;
 }
 .stButton > button:hover {
     background-color: #0C447C !important;
 }
 .stDownloadButton > button {
-    border-radius: 7px !important;
-    border-color: rgba(24,95,165,0.4) !important;
+    border-radius: 12px !important;
+    border: 1px solid rgba(128,128,128,0.2) !important;
     color: #185FA5 !important;
+    font-family: 'DM Sans', sans-serif !important;
+    font-weight: 500 !important;
 }
 .stDownloadButton > button:hover {
-    background-color: rgba(24,95,165,0.06) !important;
+    background-color: rgba(24,95,165,0.05) !important;
+}
+[data-testid="stExpander"] {
+    background-color: var(--secondary-background-color) !important;
+    border: 0.5px solid rgba(128,128,128,0.2) !important;
+    border-radius: 10px !important;
 }
 </style>
 """,
         unsafe_allow_html=True,
     )
 
-    st.markdown(
-        """
-<div style="display:flex; align-items:center; gap:10px; margin-bottom:4px;">
-  <div style="width:34px; height:34px; border-radius:8px; background:#185FA5;
-       display:flex; align-items:center; justify-content:center; flex-shrink:0;">
-    <svg width="18" height="18" viewBox="0 0 16 16" fill="none"
-         stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M2 4h12M4 8h8M6 12h4"/>
-    </svg>
+    # ── Sidebar ───────────────────────────────────────────────────────────────
+    with st.sidebar:
+        st.markdown("""
+<div style="padding-bottom:20px; border-bottom:1px solid rgba(128,128,128,0.2); margin-bottom:8px;">
+  <div style="font-family:'DM Sans',sans-serif; font-size:11px; font-weight:500;
+       color:var(--text-color); opacity:0.55; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:8px;">
+    Suite de Agentes
   </div>
-  <div>
-    <div style="font-size:15px; font-weight:500;">Agente Contenido</div>
-    <div style="font-size:10px; opacity:0.5; margin-top:1px;">TFG</div>
+  <div style="font-family:'DM Sans',sans-serif; font-size:16px; font-weight:500;
+       color:var(--text-color); letter-spacing:-0.2px; line-height:1.2;">
+    Agente Contenido
   </div>
 </div>
-<div style="display:flex; align-items:center; gap:10px; margin-bottom:4px;">
-  <div style="width:3px; height:24px; background:#185FA5;
-       border-radius:2px; flex-shrink:0;"></div>
-  <h2 style="font-size:22px; font-weight:500; margin:0;">
-    Limpieza y curación de contenido
-  </h2>
+""", unsafe_allow_html=True)
+        st.markdown("""
+<div style="display:flex; flex-direction:column; gap:12px; margin-bottom:4px; padding-top:6px;">
+  <div style="display:flex; align-items:center; gap:10px;">
+    <span style="display:inline-flex; align-items:center; justify-content:center;
+          width:20px; height:20px; border-radius:50%;
+          background:#E6F1FB; color:#185FA5;
+          font-family:'DM Sans',sans-serif; font-size:10px; font-weight:500; flex-shrink:0;">1</span>
+    <span style="font-family:'DM Sans',sans-serif; font-size:12px; color:var(--text-color); opacity:0.7;">Organizaci&#243;n del tema</span>
+  </div>
+  <div style="display:flex; align-items:center; gap:10px;">
+    <span style="display:inline-flex; align-items:center; justify-content:center;
+          width:20px; height:20px; border-radius:50%;
+          background:#E6F1FB; color:#185FA5;
+          font-family:'DM Sans',sans-serif; font-size:10px; font-weight:500; flex-shrink:0;">2</span>
+    <span style="font-family:'DM Sans',sans-serif; font-size:12px; color:var(--text-color); opacity:0.7;">Material del tema</span>
+  </div>
+  <div style="display:flex; align-items:center; gap:10px;">
+    <span style="display:inline-flex; align-items:center; justify-content:center;
+          width:20px; height:20px; border-radius:50%;
+          background:#E6F1FB; color:#185FA5;
+          font-family:'DM Sans',sans-serif; font-size:10px; font-weight:500; flex-shrink:0;">3</span>
+    <span style="font-family:'DM Sans',sans-serif; font-size:12px; color:var(--text-color); opacity:0.7;">Procesa el contenido</span>
+  </div>
 </div>
-<p style="font-size:13px; opacity:0.6; margin:0 0 16px 13px; line-height:1.5;">
-  Extracción, chunking, clasificación y ensamblado Markdown a partir de PDF o PPTX.
-</p>
-""",
-        unsafe_allow_html=True,
-    )
+""", unsafe_allow_html=True)
+        st.divider()
 
-    uploaded_files = st.file_uploader(
-        "Sube uno o varios archivos (PDF o PPTX)",
-        type=["pdf", "pptx"],
-        accept_multiple_files=True,
-    )
-    files: list = list(uploaded_files) if uploaded_files else []
-    current_files_hash = tuple(sorted(f.name for f in files))
+        # Sección 1: Organización del tema
+        st.markdown("""<div style="display:flex; align-items:center; gap:10px; margin:0 0 8px 0;">
+  <span style="display:inline-flex; align-items:center; justify-content:center;
+        width:20px; height:20px; border-radius:50%;
+        background:#E6F1FB; color:#185FA5;
+        font-family:'DM Sans',sans-serif; font-size:10px; font-weight:500; flex-shrink:0;">1</span>
+  <div>
+    <div style="font-family:'DM Sans',sans-serif; font-size:11px; font-weight:500;
+         color:var(--text-color); letter-spacing:0.06em; text-transform:uppercase; line-height:1;">
+      Organizaci&#243;n del tema</div>
+    <div style="font-family:'DM Sans',sans-serif; font-size:12px; color:var(--text-color); opacity:0.55; margin-top:3px;">
+      Archivo .md del Agente Organizador &mdash; opcional</div>
+  </div>
+</div>""", unsafe_allow_html=True)
+        uploaded_org = st.file_uploader(
+            "Organización del tema (.md)",
+            type=["md"],
+            accept_multiple_files=False,
+            key="org_uploader",
+        )
+
+        tema_horas: float | None = None
+        bloque_seleccionado: str | None = None
+
+        if uploaded_org is not None:
+            org_content = uploaded_org.getvalue().decode("utf-8", errors="replace")
+            bloques = parse_organization_md(org_content)
+            st.session_state["org_bloques"] = bloques
+            if bloques:
+                opciones = [f"{b['nombre']} ({b['horas']}h)" for b in bloques]
+                seleccion = st.selectbox(
+                    "¿Qué bloque estás procesando?",
+                    options=opciones,
+                    index=0,
+                    key="bloque_selectbox",
+                )
+                idx = opciones.index(seleccion)
+                tema_horas = bloques[idx]["horas"]
+                bloque_seleccionado = bloques[idx]["nombre"]
+            else:
+                st.warning(
+                    "No se detectaron bloques con formato '· Xh' en el archivo. "
+                    "Comprueba que es un output del Agente Organizador."
+                )
+        else:
+            st.session_state["org_bloques"] = []
+
+        st.markdown(
+            '<div style="height:1px; background:rgba(128,128,128,0.2); margin:20px 0;"></div>',
+            unsafe_allow_html=True,
+        )
+
+        # Sección 2: Material del tema
+        st.markdown("""<div style="display:flex; align-items:center; gap:10px; margin:0 0 8px 0;">
+  <span style="display:inline-flex; align-items:center; justify-content:center;
+        width:20px; height:20px; border-radius:50%;
+        background:#E6F1FB; color:#185FA5;
+        font-family:'DM Sans',sans-serif; font-size:10px; font-weight:500; flex-shrink:0;">2</span>
+  <div>
+    <div style="font-family:'DM Sans',sans-serif; font-size:11px; font-weight:500;
+         color:var(--text-color); letter-spacing:0.06em; text-transform:uppercase; line-height:1;">
+      Material del tema</div>
+    <div style="font-family:'DM Sans',sans-serif; font-size:12px; color:var(--text-color); opacity:0.55; margin-top:3px;">
+      Uno o varios PDF o PPTX con el contenido te&#243;rico del tema a convertir</div>
+  </div>
+</div>""", unsafe_allow_html=True)
+        uploaded_files = st.file_uploader(
+            "Material del tema (PDF o PPTX)",
+            type=["pdf", "pptx"],
+            accept_multiple_files=True,
+            key="material_uploader",
+        )
+        files: list = list(uploaded_files) if uploaded_files else []
+        current_files_hash = tuple(sorted(f.name for f in files))
+
+        st.divider()
+        st.button("Procesar", key="procesar_btn", disabled=not bool(files), use_container_width=True)
+
+    # ── Área principal ────────────────────────────────────────────────────────
+    components.html(_HERO_CONT_HTML, height=340, scrolling=False)
 
     if files and any(Path(f.name).suffix.lower() == ".pdf" for f in files):
         st.warning(
@@ -100,26 +324,15 @@ def main() -> None:
         )
 
     if files:
-        chips_html = "".join(
-            f'<span style="display:inline-flex; align-items:center; gap:5px; '
-            f'background:rgba(128,128,128,0.08); border:0.5px solid rgba(128,128,128,0.15); '
-            f'border-radius:5px; padding:4px 10px; font-size:11px; '
-            f'color:var(--text-color); margin:0 4px 4px 0;">'
-            f'<span style="width:6px; height:6px; border-radius:50%; '
-            f'background:#185FA5; display:inline-block; flex-shrink:0;"></span>'
-            f"{f.name}</span>"
-            for f in files
-        )
-        st.markdown(
-            f'<div style="display:flex; flex-wrap:wrap; margin-bottom:12px;">'
-            f"{chips_html}</div>",
-            unsafe_allow_html=True,
-        )
-
-    if files:
-        if st.button("Procesar"):
+        if st.session_state.get("procesar_btn"):
             st.session_state["resultados"] = []
             st.session_state["archivos_hash"] = current_files_hash
+
+            if bloque_seleccionado:
+                st.info(
+                    f"Procesando con contexto de densidad: **{bloque_seleccionado}** "
+                    f"({tema_horas}h)"
+                )
 
             for uploaded in files:
                 name = uploaded.name
@@ -149,7 +362,7 @@ def main() -> None:
                             done = 0
                             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
                                 future_to_i = {
-                                    pool.submit(classify_and_format, chunk): i
+                                    pool.submit(classify_and_format, chunk, tema_horas): i
                                     for i, chunk in enumerate(chunks)
                                 }
                                 for fut in as_completed(future_to_i):
@@ -209,7 +422,9 @@ def main() -> None:
 
     if not st.session_state["resultados"] and not files:
         st.info(
-            "Sube uno o varios archivos PDF o PPTX y pulsa **Procesar** para comenzar."
+            "Sube la organización del tema (.md) y uno o varios archivos PDF o PPTX, "
+            "luego pulsa **Procesar** para comenzar. "
+            "El archivo de organización es opcional."
         )
 
     if st.session_state["resultados"]:

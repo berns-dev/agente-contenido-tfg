@@ -160,9 +160,24 @@ def _get_client() -> anthropic.Anthropic:
     return _anthropic_client
 
 
-def _call_anthropic(chunk_text: str) -> dict[str, Any]:
+_DENSITY_CONTEXT_TMPL = (
+    "[CONTEXTO DE DENSIDAD: Este tema tiene asignadas {horas}h lectivas. "
+    "Ajusta la extensión y profundidad del markdown en proporción al tiempo disponible — "
+    "más horas implica mayor desarrollo, menos horas mayor síntesis. "
+    "Restricción absoluta: no añadas contenido ausente en el material.]\n\n"
+)
+
+
+def _build_user_message(chunk_text: str, tema_horas: float | None) -> str:
+    if tema_horas is None:
+        return chunk_text
+    return _DENSITY_CONTEXT_TMPL.format(horas=tema_horas) + chunk_text
+
+
+def _call_anthropic(chunk_text: str, tema_horas: float | None = None) -> dict[str, Any]:
     client = _get_client()
     model = select_model(chunk_text)
+    user_message = _build_user_message(chunk_text, tema_horas)
 
     last_raw = ""
     for attempt in range(3):
@@ -170,7 +185,7 @@ def _call_anthropic(chunk_text: str) -> dict[str, Any]:
             model=model,
             max_tokens=2048,
             system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": chunk_text}],
+            messages=[{"role": "user", "content": user_message}],
         )
         raw = message.content[0].text
         last_raw = raw
@@ -211,9 +226,9 @@ def _call_anthropic(chunk_text: str) -> dict[str, Any]:
     )
 
 
-def classify_and_format(fragment: str) -> dict[str, Any]:
+def classify_and_format(fragment: str, tema_horas: float | None = None) -> dict[str, Any]:
     """Clasifica y formatea un fragmento devolviendo un dict validado."""
-    data = _call_anthropic(fragment.strip())
+    data = _call_anthropic(fragment.strip(), tema_horas=tema_horas)
 
     tipo = str(data.get("tipo", "mixto")).strip()
     if tipo not in VALID_TYPES:
